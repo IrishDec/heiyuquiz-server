@@ -114,27 +114,19 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, where: 'render', now: Date.now() });
 });
 
-// Answers for a quiz (sanitized; exposes correctIndex only)
-app.get('/api/quiz/:id/answers', (req, res) => {
-  const id = req.params.id;
+// Answers: return sanitized questions with a reliable correctIndex
+app.get("/api/quiz/:id/answers", (req, res) => {
+  const { id } = req.params;
   const quiz = quizzes.get(id);
-  if (!quiz) return res.status(404).json({ ok:false, error:'Quiz not found' });
+  if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
 
-  const questions = (quiz.questions || []).map(q => {
-    const options = q.options || q.choices || [];
-    let correctIndex = null;
-    if (typeof q.correctIdx === 'number')      correctIndex = q.correctIdx;
-    else if (typeof q.correctIndex === 'number') correctIndex = q.correctIndex;
-
-    return {
-      q: q.question || q.q || '',
-      options,
-      correctIndex
-    };
-  });
+  const questions = (quiz.questions || []).map(q => ({
+    q: q.question || q.q || "",
+    options: q.options || [],
+    correctIndex: (typeof q.correctIdx === "number" ? q.correctIdx : null)
+  }));
 
   res.json({ ok:true, id, questions });
 });
-
 
 app.listen(PORT, () => console.log("HeiyuQuiz server on", PORT));
