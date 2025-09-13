@@ -19,6 +19,9 @@ const catMap = { General:"", Movies:"11", Science:"17", Sports:"21", History:"23
 
 const now = () => Date.now();
 const makeId = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+// Toggle: use AI route or legacy route
+const USE_AI = false;
+
 
 // Basic per-IP rate limit
 app.use((req, res, next) => {
