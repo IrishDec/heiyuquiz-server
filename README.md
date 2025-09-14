@@ -1,68 +1,121 @@
-HeiyuQuiz — Server (API)
+# HeiyuQuiz — Server (API)
 
-Express API for HeiyuQuiz. Creates quizzes, accepts submissions, and serves results.
-👉 Frontend repo:(https://github.com/IrishDec/heiyuquiz-client/blob/main/README.md)
+Express API for HeiyuQuiz. Creates quizzes, accepts submissions, returns results.
+Pairs with the frontend client.
 
-🌐 Prod base URL: https://heiyuquiz-server.onrender.com (replace if different)
+**Frontend repo:** [HeiyuQuiz Client](https://github.com/REPLACE_THIS/heiyuquiz-client)  
+**Production base URL:** `https://heiyuquiz-server.onrender.com` (change if different)
 
-📂 Project Structure
+---
+
+## Project Structure
+
 server/
-├─ server.js                # API routes (Express)
-└─ package.json             # deps: express, cors, node-fetch, openai
-The client lives in a separate repo:(https://github.com/IrishDec/heiyuquiz-client/blob/main/README.md)
+├─ server.js # Express routes
+└─ package.json # deps: express, cors, node-fetch, openai
 
-🔌 Endpoints (quick view)
+yaml
+Copy code
 
-Base URL: https://heiyuquiz-server.onrender.com
+> The client lives separately: [HeiyuQuiz Client](https://github.com/REPLACE_THIS/heiyuquiz-client)
 
-GET    /api/health
-POST   /api/createQuiz            # OpenTrivia (stable)
-POST   /api/createQuiz/ai         # GPT (beta) — returns provider: "ai"|"opentdb"
-GET    /api/quiz/:id              # Public quiz (no answers)
-POST   /api/quiz/:id/submit       # Body: { name, picks[] } → { ok, score }
-GET    /api/quiz/:id/results      # Leaderboard
-GET    /api/quiz/:id/answers      # For "My answers" panel (sanitized)
+---
 
-Server stores questions as { question, options, correctIdx }.
-/answers maps to { q, options, correctIndex } for the client.
+## Requirements
 
-⚙️ Environment
+- Node.js 18+
+- An OpenAI API key (only if using the AI endpoint)
 
-PORT — default 4001
-MAX_PARTICIPANTS — per-quiz cap (default 300)
-OPENAI_API_KEY — required for /api/createQuiz/ai
+---
 
-🚀 Run locally
+## Environment Variables
+
+- `PORT` — default `4001`
+- `MAX_PARTICIPANTS` — per-quiz cap (default `300`)
+- `OPENAI_API_KEY` — required for `/api/createQuiz/ai`
+
+---
+
+## Run Locally
+
+```bash
 npm install
-# set your key (for AI route)
-export OPENAI_API_KEY=sk-...   # or use a .env with your process manager
+# (optional, only for AI route)
+export OPENAI_API_KEY=sk-...
 
 node server.js
 # -> http://localhost:4001
+Point the client to your local server (in the client repo’s app.js):
 
-
-Point the client to your local server in its app.js:
-
+js
+Copy code
 window.SERVER_URL = "http://localhost:4001";
+Endpoints
+Base URL: https://heiyuquiz-server.onrender.com
 
-☁️ Deploy (Render)
+bash
+Copy code
+GET    /api/health                    -> { ok: true }
 
-Create a Web Service and deploy this repo.
+POST   /api/createQuiz                # OpenTrivia (stable)
+       Body: { category, amount, durationSec }
+       -> { ok, quizId, closesAt }
 
-Add environment variables:
+POST   /api/createQuiz/ai             # GPT (beta, localized; falls back)
+       Body: { category, topic, country, amount, durationSec }
+       -> { ok, quizId, closesAt, provider: "ai" | "opentdb" }
 
-OPENAI_API_KEY (required for AI route)
+GET    /api/quiz/:id                  # Public quiz (no answers)
+       -> { ok, id, category, closesAt, open, questions:[{ q, options[] }] }
+
+POST   /api/quiz/:id/submit           # Submit picks
+       Body: { name, picks:number[] }
+       -> { ok, score }
+
+GET    /api/quiz/:id/results          # Leaderboard
+       -> { ok, results:[{ name, score, submittedAt }], totalQuestions }
+
+GET    /api/quiz/:id/answers          # For "My answers" panel
+       -> { ok, questions:[{ q, options[], correctIndex }] }
+Notes
+
+Internally questions are stored as { question, options, correctIdx }.
+
+/answers exposes a sanitized shape with correctIndex for the client.
+
+Quick cURL Tests
+bash
+Copy code
+# Health
+curl -s https://heiyuquiz-server.onrender.com/api/health
+
+# Create (OpenTrivia)
+curl -s -X POST https://heiyuquiz-server.onrender.com/api/createQuiz \
+  -H "Content-Type: application/json" \
+  -d '{"category":"General","amount":3,"durationSec":120}'
+
+# Create (AI, beta)
+curl -s -X POST https://heiyuquiz-server.onrender.com/api/createQuiz/ai \
+  -H "Content-Type: application/json" \
+  -d '{"category":"General","topic":"Irish history","country":"IE","amount":5}'
+Deploy on Render
+Create a Web Service from this repo.
+
+Add env vars:
+
+OPENAI_API_KEY (required for AI)
 
 MAX_PARTICIPANTS (optional)
 
-Health check: GET /api/health should return { ok: true }.
+Deploy. Health check: GET /api/health → { ok: true }.
 
-📝 Notes
+Behavior & Fallbacks
+The AI endpoint normalizes to { question, options, correctIdx }.
 
-In-memory storage (MVP). Move to a DB for persistence later.
+If generation fails or is invalid, it falls back to OpenTrivia and returns provider: "opentdb" so you can see which source was used.
 
-The AI route normalizes output and falls back to OpenTrivia if generation fails, so the endpoint always responds.
+bash
+Copy code
 
-Pair with the client: HeiyuQuiz Client
-.
+Replace `https://github.com/REPLACE_THIS/heiyuquiz-client` with your actual client repo URL and you’re set.
 
