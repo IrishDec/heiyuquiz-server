@@ -112,7 +112,14 @@ function sanitizeTopic(raw = "") {
   const allowed = !BAD.some(b => lowered.includes(b));
   return { topic: allowed ? topic || "general knowledge" : "general knowledge", allowed };
 }
-
+// Minimal HTML entity decode for AI output
+function decodeHTML(s=""){
+  return String(s)
+    .replace(/&quot;/g,'"').replace(/&#039;/g,"'")
+    .replace(/&amp;/g,'&').replace(/&eacute;/g,'é')
+    .replace(/&rsquo;/g,"’").replace(/&ldquo;/g,'“')
+    .replace(/&rdquo;/g,'”');
+}
 
 // Generate multiple-choice questions with GPT (family-friendly)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5 }) {
