@@ -173,54 +173,39 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// Create a broadcast quiz (host) — AI if a custom topic is given, else OpenTDB + regional bias
-app.post("/api/createQuiz", async (req, res) => {
+// GPT-powered quiz (live, uses topic + country)
+app.post("/api/createQuiz/ai", async (req, res) => {
   try {
     const { category="General", topic="", country="", amount=5, durationSec=600 } = req.body || {};
+
+    // sanitize topic; fallback to category if empty
+    const { topic: safeTopic } = sanitizeTopic(topic || category);
+
+    // Generate questions via GPT
+    const qs = await generateAIQuestions({
+      topic: safeTopic,
+      country: (country || "").trim(),
+      amount: Math.max(3, Math.min(10, Number(amount) || 5)),
+    });
+
+    if (!qs.length) return res.status(500).json({ ok:false, error:"AI returned no questions" });
+
+    // Store quiz (same shape as OpenTDB path)
     const id = makeId();
-
-    let qs = [];
-    const wantsAI = !!(topic && topic.trim().length >= 3 && process.env.OPENAI_API_KEY);
-
-    // 1) If a custom topic is provided, try GPT first
-    if (wantsAI) {
-      try {
-        // sanitize topic (fallback to safe general knowledge if blocked)
-        const { topic: safeTopic } = sanitizeTopic(topic || category);
-
-        // Ask GPT for questions using sanitized topic + country
-        qs = await generateAIQuestions({
-          topic: safeTopic,
-          country: (country || "").trim(),
-          amount: Math.max(3, Math.min(10, Number(amount) || 5)),
-        });
-      } catch (e) {
-        console.warn("AI generation failed, falling back to OpenTDB:", e?.message || e);
-        qs = [];
-      }
-    }
-
-    // 2) Fallback: OpenTDB + 1 regional question at the front (if available)
-    if (!qs.length) {
-      const base = await getQuestions(catMap[category] ?? "", amount);
-      const regional = pickRegionalQuestion(category, country);
-      qs = regional ? [regional, ...base].slice(0, amount) : base;
-    }
-
-    // 3) Store quiz (same shape as before)
-    const createdAt = now();
-    const closesAt  = createdAt + durationSec * 1000;
+    const createdAt = Date.now();
+    const closesAt  = createdAt + (durationSec * 1000);
 
     quizzes.set(id, { id, category, createdAt, closesAt, questions: qs });
     submissions.set(id, []);
     participants.set(id, new Set());
 
-    res.json({ ok:true, quizId:id, closesAt, provider: wantsAI ? "ai" : "opentdb" });
+    res.json({ ok:true, quizId:id, closesAt, provider:"ai" });
   } catch (e) {
-    console.error("createQuiz error", e);
-    res.status(500).json({ ok:false, error:"Failed to create quiz" });
+    console.error("createQuiz/ai error", e);
+    res.status(500).json({ ok:false, error:"AI quiz failed" });
   }
 });
+
 
 
 
