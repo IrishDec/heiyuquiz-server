@@ -166,29 +166,55 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// Create a broadcast quiz (host) — region-aware
+// Create a broadcast quiz (host) — AI if a custom topic is given, else OpenTDB + regional bias
 app.post("/api/createQuiz", async (req, res) => {
   try {
-    const { category="General", amount=5, durationSec=600, country="" } = req.body || {};
+    const { category="General", topic="", country="", amount=5, durationSec=600 } = req.body || {};
     const id = makeId();
 
-    // fetch generic questions
-    const base = await getQuestions(catMap[category] ?? "", amount);
+    let qs = [];
+    const wantsAI = !!(topic && topic.trim().length >= 3 && process.env.OPENAI_API_KEY);
 
-    // try add one regional question at the front
-    const regional = pickRegionalQuestion(category, country);
-    const qs = regional ? [regional, ...base].slice(0, amount) : base;
+    // 1) If a custom topic is provided, try GPT first
+    if (wantsAI) {
+      try {
+        // sanitize topic (fallback to safe general knowledge if blocked)
+        const { topic: safeTopic } = sanitizeTopic(topic || category);
 
+        // Ask GPT for questions using sanitized topic + country
+        qs = await generateAIQuestions({
+          topic: safeTopic,
+          country: (country || "").trim(),
+          amount: Math.max(3, Math.min(10, Number(amount) || 5)),
+        });
+      } catch (e) {
+        console.warn("AI generation failed, falling back to OpenTDB:", e?.message || e);
+        qs = [];
+      }
+    }
+
+    // 2) Fallback: OpenTDB + 1 regional question at the front (if available)
+    if (!qs.length) {
+      const base = await getQuestions(catMap[category] ?? "", amount);
+      const regional = pickRegionalQuestion(category, country);
+      qs = regional ? [regional, ...base].slice(0, amount) : base;
+    }
+
+    // 3) Store quiz (same shape as before)
     const createdAt = now();
-    const closesAt = createdAt + durationSec*1000;
+    const closesAt  = createdAt + durationSec * 1000;
+
     quizzes.set(id, { id, category, createdAt, closesAt, questions: qs });
     submissions.set(id, []);
     participants.set(id, new Set());
-    res.json({ ok:true, quizId:id, closesAt, shareUrlHint:`/play#${id}` });
+
+    res.json({ ok:true, quizId:id, closesAt, provider: wantsAI ? "ai" : "opentdb" });
   } catch (e) {
+    console.error("createQuiz error", e);
     res.status(500).json({ ok:false, error:"Failed to create quiz" });
   }
 });
+
 
 
 // Get quiz for players (no answers leaked)
