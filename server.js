@@ -99,6 +99,20 @@ function pickRegionalQuestion(category = "General", country = "") {
   }
   return null;
 }
+// Family-friendly topic sanitizer
+function sanitizeTopic(raw = "") {
+  const BAD = [
+    "porn","nsfw","sex","xxx","explicit",
+    "rape","incest","bestiality",
+    "self harm","suicide",
+    "hate","slur","terrorism"
+  ];
+  const topic = String(raw).trim().slice(0, 80);
+  const lowered = topic.toLowerCase();
+  const allowed = !BAD.some(b => lowered.includes(b));
+  return { topic: allowed ? topic || "general knowledge" : "general knowledge", allowed };
+}
+
 
 // Generate multiple-choice questions with GPT (family-friendly)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5 }) {
