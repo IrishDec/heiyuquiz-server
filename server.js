@@ -57,6 +57,49 @@ async function getQuestions(categoryId, amount=5) {
   });
   return qs;
 }
+// Simple regional question pool (1 picked per quiz if available)
+function pickRegionalQuestion(category = "General", country = "") {
+  const c = String(country || "").toUpperCase();
+  const byCat = {
+    Sports: [
+      { regions:["IE","UK","EU"], q:"How many All-Ireland Senior Football titles has Kerry won the most of?", opts:["38","25","15","9"], correct:0 },
+      { regions:["IE","UK","EU"], q:"Which sport is governed by the GAA?", opts:["Rugby","Gaelic games","Soccer","Cricket"], correct:1 },
+      { regions:["US"], q:"Which team won Super Bowl I?", opts:["Packers","Cowboys","Jets","Chiefs"], correct:0 },
+    ],
+    History: [
+      { regions:["IE","EU"], q:"In what year did Ireland become a republic (left the Commonwealth)?", opts:["1937","1949","1966","1973"], correct:1 },
+    ],
+    Geography: [
+      { regions:["IE","EU"], q:"What is the capital of Ireland?", opts:["Cork","Galway","Dublin","Limerick"], correct:2 },
+      { regions:["US"], q:"Which U.S. state is nicknamed the \"Sunshine State\"?", opts:["California","Florida","Arizona","Nevada"], correct:1 },
+    ],
+    Movies: [
+      { regions:["IE","UK","EU"], q:"Which Irish actor stars in 'In Bruges'?", opts:["Colin Farrell","Cillian Murphy","Brendan Gleeson","Liam Neeson"], correct:0 },
+    ],
+    General: [
+      { regions:["GLOBAL"], q:"How many minutes are in two hours?", opts:["60","90","100","120"], correct:3 },
+    ],
+    Science: [
+      { regions:["GLOBAL"], q:"Which planet is known as the Red Planet?", opts:["Venus","Mars","Jupiter","Mercury"], correct:1 },
+    ],
+  };
+
+  const pool = byCat[category] || byCat.General || [];
+  const prefs = (c === "IE") ? ["IE","UK","EU","GLOBAL"]
+              : (c === "GB" || c === "UK") ? ["UK","IE","EU","GLOBAL"]
+              : (c === "US" || c === "CA") ? ["US","GLOBAL","EU"]
+              : ["GLOBAL","EU","US"];
+
+  for (const tier of prefs) {
+    const list = pool.filter(x => x.regions.includes(tier));
+    if (list.length) {
+      const it = list[Math.floor(Math.random() * list.length)];
+      return { question: it.q, options: it.opts, correctIdx: it.correct };
+    }
+  }
+  return null;
+}
+
 // Generate multiple-choice questions with GPT (family-friendly)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5 }) {
   const model = process.env.AI_MODEL || "gpt-4o-mini";
@@ -109,12 +152,19 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// Create a broadcast quiz (host)
+// Create a broadcast quiz (host) — region-aware
 app.post("/api/createQuiz", async (req, res) => {
   try {
-    const { category="General", amount=5, durationSec=600 } = req.body || {};
+    const { category="General", amount=5, durationSec=600, country="" } = req.body || {};
     const id = makeId();
-    const qs = await getQuestions(catMap[category] ?? "", amount);
+
+    // fetch generic questions
+    const base = await getQuestions(catMap[category] ?? "", amount);
+
+    // try add one regional question at the front
+    const regional = pickRegionalQuestion(category, country);
+    const qs = regional ? [regional, ...base].slice(0, amount) : base;
+
     const createdAt = now();
     const closesAt = createdAt + durationSec*1000;
     quizzes.set(id, { id, category, createdAt, closesAt, questions: qs });
@@ -125,6 +175,7 @@ app.post("/api/createQuiz", async (req, res) => {
     res.status(500).json({ ok:false, error:"Failed to create quiz" });
   }
 });
+
 
 // Get quiz for players (no answers leaked)
 app.get("/api/quiz/:id", (req, res) => {
