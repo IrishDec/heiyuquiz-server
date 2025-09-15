@@ -253,6 +253,11 @@ app.get("/api/quiz/:id/results", (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, where: 'render', now: Date.now() });
 });
+// --- minimal debug logs for create endpoints
+function logCreate(kind, { category, topic, country, amount }) {
+  console.log(`[create:${kind}] cat="${category}" topic="${(topic||'').slice(0,60)}" country="${country}" amount=${amount}`);
+}
+
 
 // Answers: return sanitized questions with a reliable correctIndex
 app.get("/api/quiz/:id/answers", (req, res) => {
