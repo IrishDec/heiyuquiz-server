@@ -57,6 +57,54 @@ async function getQuestions(categoryId, amount=5) {
   });
   return qs;
 }
+// Generate multiple-choice questions with GPT (family-friendly)
+async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5 }) {
+  const model = process.env.AI_MODEL || "gpt-4o-mini";
+
+  const sys = [
+    "You generate family-friendly multiple-choice trivia.",
+    "Return JSON ONLY with the exact shape:",
+    "{ \"questions\": [ { \"q\": string, \"options\": [string,string,string,string], \"correctIndex\": number } ] }",
+    "Rules:",
+    "- safe for ages 10+, no adult content, hate, self-harm or instructions for harm.",
+    "- 1 concise sentence per question.",
+    "- Exactly 4 options with 1 correct.",
+    "- correctIndex is the index (0-3) in options.",
+  ].join(" ");
+
+  const user = `Create ${amount} questions.
+Topic: ${topic}.
+${country ? `Bias facts/examples to ${country}.` : ""}`;
+
+  const resp = await openai.chat.completions.create({
+    model,
+    temperature: 0.7,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: sys },
+      { role: "user", content: user }
+    ]
+  });
+
+  let data;
+  try { data = JSON.parse(resp.choices?.[0]?.message?.content || "{}"); }
+  catch { data = { questions: [] }; }
+
+  const arr = Array.isArray(data.questions) ? data.questions : [];
+
+  // Normalize to your server shape
+  return arr.slice(0, amount).map((it) => {
+    const q = decodeHTML(it.q || it.question || "");
+    const options = Array.isArray(it.options) ? it.options.slice(0,4).map(decodeHTML) : [];
+    let correctIdx = Number.isInteger(it.correctIndex) ? it.correctIndex : null;
+
+    // Safety: if model didn't give a valid correctIndex, just pick index 0
+    if (!(correctIdx >= 0 && correctIdx < 4)) correctIdx = 0;
+
+    return { question: q, options, correctIdx };
+  });
+}
+
 
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
