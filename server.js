@@ -218,24 +218,43 @@ app.get("/api/quiz/:id", (req, res) => {
   res.json({ ok:true, id:quiz.id, category:quiz.category, closesAt:quiz.closesAt, open, questions: publicQs });
 });
 
-// Submit answers
+// Submit answers (one per player fingerprint)
 app.post("/api/quiz/:id/submit", (req, res) => {
   const quiz = quizzes.get(req.params.id);
   if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
-  const { name="Player", picks=[] } = req.body || {};
-  const fp = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "ip") + ":" + String(name).trim().toLowerCase();
+
+  const { name = "Player", picks = [] } = req.body || {};
+  const cleanName = String(name).slice(0, 24).trim();
+
+  // Build a simple fingerprint: IP + name (lowercased)
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "ip";
+  const fp = `${ip}:${cleanName.toLowerCase()}`;
+
+  // Capacity control (existing behavior)
   const partSet = participants.get(quiz.id) || new Set();
   if (partSet.size >= MAX_PARTICIPANTS && !partSet.has(fp)) {
     return res.status(503).json({ ok:false, error:"Quiz is at capacity, please try another round." });
   }
-  partSet.add(fp);
-  participants.set(quiz.id, partSet);
 
+  // ⛔ NEW: block duplicate submissions from the same fingerprint
+  const rows = submissions.get(quiz.id) || [];
+  if (rows.some(r => r.fp === fp)) {
+    return res.status(409).json({ ok:false, error:"You already submitted this quiz." });
+  }
+
+  // Score answers
   let score = 0;
   quiz.questions.forEach((q, i) => { if (Number(picks[i]) === q.correctIdx) score++; });
-  const row = { name: String(name).slice(0,24), score, submittedAt: now() };
-  submissions.get(quiz.id).push(row);
+
+  // Store result with fp (fp is not exposed to clients elsewhere)
+  const row = { name: cleanName, score, submittedAt: Date.now(), fp };
+  partSet.add(fp);
+  participants.set(quiz.id, partSet);
+  submissions.set(quiz.id, [...rows, row]);
+
   res.json({ ok:true, score });
+});
+.json({ ok:true, score });
 });
 
 // Results (Winner → Loser)
