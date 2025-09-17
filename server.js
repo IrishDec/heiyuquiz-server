@@ -247,13 +247,14 @@ function normalizeQ(s=""){
     .trim();
 }
 
-async function getRecentQuestionSet({ topic="", country="", days=14 }){
+async function getRecentQuestionSet({ topic = "", country = "", days = 14 }) {
   if (!supabase) return new Set();
-  try{
-    const since = new Date(Date.now() - days*24*3600*1000).toISOString();
+  try {
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
 
     // recent quiz ids for same topic/country
-    let q1 = supabase.from("quizzes")
+    let q1 = supabase
+      .from("quizzes")
       .select("id")
       .gte("created_at", since);
 
@@ -272,7 +273,17 @@ async function getRecentQuestionSet({ topic="", country="", days=14 }){
       .in("quiz_id", ids.slice(0, 100)); // safety cap
     if (e2 || !qRows?.length) return new Set();
 
-    return new Set(qRows.
+    const norms = qRows
+      .map(r => normalizeQ(r.q || ""))
+      .filter(Boolean);
+
+    return new Set(norms);
+  } catch (err) {
+    console.warn("[supabase] getRecentQuestionSet failed:", err?.message || err);
+    return new Set();
+  }
+}
+
 
 // Generate multiple-choice questions with GPT (family-friendly, country + difficulty aware)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5, difficulty = "medium" }) {
