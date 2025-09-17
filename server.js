@@ -7,7 +7,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 // --- Supabase client (persistence) ---
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js"; 
 
 // Only init if BOTH env vars exist; otherwise run in memory-only mode.
 const HAS_SUPABASE = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
@@ -323,9 +323,6 @@ app.post("/api/createQuiz/ai", async (req, res) => {
     res.status(500).json({ ok:false, error:"AI quiz failed" });
   }
 });
-
-
-
 
 
 // Get quiz for players (no answers leaked). Falls back to Supabase if memory miss.
