@@ -246,6 +246,10 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
   const diff = String(difficulty || "medium").toLowerCase();
   const DIFF = (diff === "easy" || diff === "hard") ? diff : "medium";
 
+  // normalize country code (keep as hint; the model knows ISO-3166 codes)
+  const COUNTRY = String(country || "").trim().toUpperCase();
+  const HAS_COUNTRY = !!COUNTRY;
+
   const sys = [
     "You generate family-friendly multiple-choice trivia.",
     "Return JSON ONLY with the exact shape:",
@@ -269,12 +273,26 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
       "- Medium: balanced difficulty, moderate specificity."
     ];
 
+  // Strong country enforcement
+  const countryGuide = !HAS_COUNTRY ? [] : [
+    `- Country focus: ISO 3166-1 alpha-2 code is "${COUNTRY}". Interpret it (e.g., IE=Ireland, GB=United Kingdom, US=United States).`,
+    `- ${amount >= 5 ? "All or at least 4 of the" : "All"} questions must explicitly relate to that country (people, places, events, culture, sport, history, geography, etc.).`,
+    "- Do NOT include questions primarily about other countries.",
+    "- Include a healthy spread of subtopics within that country."
+  ];
+
+  // If the topic is just “General”, make it clearly country-specific
+  const effectiveTopic = HAS_COUNTRY && /^general\b/i.test(String(topic))
+    ? `General knowledge about the country "${COUNTRY}" (interpret the code to full country name).`
+    : topic;
+
   const user = [
     `Create ${amount} questions.`,
-    `Topic: ${topic}.`,
-    country ? `Bias facts/examples to ${country}.` : "",
+    `Topic: ${effectiveTopic}.`,
+    HAS_COUNTRY ? `Country code: ${COUNTRY}.` : "",
     `Difficulty: ${DIFF}.`,
-    ...difficultyGuide
+    ...difficultyGuide,
+    ...countryGuide
   ].filter(Boolean).join("\n");
 
   const resp = await openai.chat.completions.create({
@@ -296,16 +314,12 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
   // Normalize to your server shape
   return arr.slice(0, amount).map((it) => {
     const q = decodeHTML(it.q || it.question || "");
-    const options = Array.isArray(it.options) ? it.options.slice(0,4).map(decodeHTML) : [];
+    const options = Array.isArray(it.options) ? it.options.slice(0, 4).map(decodeHTML) : [];
     let correctIdx = Number.isInteger(it.correctIndex) ? it.correctIndex : null;
-
-    if (!(correctIdx >= 0 && correctIdx < 4)) correctIdx = 0; // safety
-
+    if (!(correctIdx >= 0 && correctIdx < 4)) correctIdx = 0;
     return { question: q, options, correctIdx };
   });
 }
-
-
 
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
