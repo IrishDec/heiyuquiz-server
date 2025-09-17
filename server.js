@@ -381,63 +381,7 @@ app.get("/api/quiz/:id", async (req, res) => {
     questions: publicQs
   });
 });
-// Submit answers (one per player fingerprint) + persist (with DB fallback)
-app.post("/api/quiz/:id/submit", async (req, res) => {
-  const id = req.params.id;
-  let quiz = quizzes.get(id);
-
-  // If server was cold, try load from DB so players can still submit
-  if (!quiz) {
-    const fromDb = await dbLoadQuiz(id);
-    if (fromDb) {
-      quiz = {
-        id: fromDb.id,
-        category: fromDb.category,
-        createdAt: now(),
-        closesAt: fromDb.closesAt || (now() + 24*3600*1000),
-        questions: fromDb.questions || [],
-        topic: fromDb.topic || "",
-        country: fromDb.country || ""
-      };
-      quizzes.set(id, quiz);
-      submissions.set(id, submissions.get(id) || []);
-      participants.set(id, participants.get(id) || new Set());
-    }
-  }
-
-  if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
-
-  const { name = "Player", picks = [] } = req.body || {};
-  const cleanName = String(name).slice(0, 24).trim();
-
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
-          || req.socket.remoteAddress || "ip";
-  const fp = `${ip}:${cleanName.toLowerCase()}`;
-
-  const partSet = participants.get(id) || new Set();
-  if (partSet.size >= MAX_PARTICIPANTS && !partSet.has(fp)) {
-    return res.status(503).json({ ok:false, error:"Quiz is at capacity, please try another round." });
-  }
-
-  const rows = submissions.get(id) || [];
-  if (rows.some(r => r.fp === fp)) {
-    return res.status(409).json({ ok:false, error:"You already submitted this quiz." });
-  }
-
-  let score = 0;
-  quiz.questions.forEach((q, i) => { if (Number(picks[i]) === q.correctIdx) score++; });
-
-  const row = { name: cleanName, score, submittedAt: now(), fp };
-  partSet.add(fp);
-  participants.set(id, partSet);
-  submissions.set(id, [...rows, row]);
-
-  dbSaveSubmission(id, { name: cleanName, score, submittedAt: row.submittedAt }).catch(()=>{});
-
-  res.json({ ok:true, score });
-});
-
-
+/api/quiz/:id/submit
 
 // Results (Winner → Loser). Falls back to Supabase if memory miss.
 app.get("/api/quiz/:id/results", async (req, res) => {
