@@ -360,7 +360,7 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// GPT-powered quiz (AI) — persists to Supabase (best-effort)
+// GPT-powered quiz (AI) — persists to Supabase (best-effort) with difficulty + novelty filtering
 app.post("/api/createQuiz/ai", async (req, res) => {
   try {
     const {
@@ -369,38 +369,80 @@ app.post("/api/createQuiz/ai", async (req, res) => {
       country = "",
       amount = 5,
       durationSec = 600,
-      difficulty = "medium"                  // ⬅️ NEW
+      difficulty = "medium"
     } = req.body || {};
 
-    // tiny debug log (non-blocking)
     try { logCreate?.("ai", { category, topic, country, amount, difficulty }); } catch {}
 
-    // guardrails
     const safeAmount   = Math.max(3, Math.min(10, Number(amount) || 5));
-    const safeDuration = Math.max(60, Math.min(3600, Number(durationSec) || 600)); // 1–60 min
+    const safeDuration = Math.max(60, Math.min(3600, Number(durationSec) || 600));
     const diff = String(difficulty || "medium").toLowerCase();
-    const safeDifficulty = (diff === "easy" || diff === "hard") ? diff : "medium"; // ⬅️ NEW
+    const safeDifficulty = (diff === "easy" || diff === "hard") ? diff : "medium";
 
-    // sanitize topic; fallback to category if empty
     const { topic: safeTopic } = sanitizeTopic(topic || category);
+    const trimmedCountry = String(country || "").trim();
 
-    // Generate questions via GPT (now honors difficulty)
-    const qs = await generateAIQuestions({
+    // Load recent questions (same topic/country) to avoid repeats
+    const recentSet = await getRecentQuestionSet({
       topic: safeTopic,
-      country: String(country || "").trim(),
-      amount: safeAmount,
-      difficulty: safeDifficulty             // ⬅️ NEW
+      country: trimmedCountry,
+      days: 14
     });
-    if (!qs.length) return res.status(500).json({ ok: false, error: "AI returned no questions" });
 
-    // Store in memory
+    // Ask model for extras so we can filter
+    const requestAmount = Math.min(15, safeAmount + 5);
+    const rawQs = await generateAIQuestions({
+      topic: safeTopic,
+      country: trimmedCountry,
+      amount: requestAmount,
+      difficulty: safeDifficulty
+    });
+    if (!rawQs.length) return res.status(500).json({ ok: false, error: "AI returned no questions" });
+
+    // Filter duplicates (recent + intra-quiz)
+    const picked = [];
+    const seen = new Set();
+    for (const q of rawQs) {
+      const norm = normalizeQ(q.question || q.q || "");
+      if (!norm) continue;
+      if (recentSet.has(norm)) continue;
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      picked.push(q);
+      if (picked.length >= safeAmount) break;
+    }
+    // Top up if still short (still avoid intra-quiz dupes)
+    if (picked.length < safeAmount) {
+      for (const q of rawQs) {
+        if (picked.length >= safeAmount) break;
+        const norm = normalizeQ(q.question || q.q || "");
+        if (!norm || seen.has(norm)) continue;
+        seen.add(norm);
+        picked.push(q);
+      }
+    }
+
+    const qs = picked.slice(0, safeAmount);
+    if (!qs.length) return res.status(500).json({ ok: false, error: "Not enough unique questions" });
+
+    // Store + persist
     const id = makeId();
     const createdAt = now();
     const closesAt  = createdAt + safeDuration * 1000;
 
-    quizzes.set(id, {
-      id, category, createdAt, closesAt,
-      questions: qs, topic: safeTopic, country: String(country || "").trim()
+    quizzes.set(id, { id, category, createdAt, closesAt, questions: qs, topic: safeTopic, country: trimmedCountry });
+    submissions.set(id, []);
+    participants.set(id, new Set());
+
+    await dbSaveQuiz({ id, category, topic: safeTopic, country: trimmedCountry, createdAt, closesAt, questions: qs });
+
+    res.json({ ok: true, quizId: id, closesAt, provider: "ai", totalQuestions: qs.length });
+  } catch (e) {
+    console.error("createQuiz/ai error", e);
+    res.status(500).json({ ok: false, error: "AI quiz failed" });
+  }
+});
+
 
 
 
@@ -442,6 +484,7 @@ app.get("/api/quiz/:id", async (req, res) => {
     questions: publicQs
   });
 });
+    
 // Submit answers (one per player fingerprint) + persist to Supabase (with DB fallback)
 app.post("/api/quiz/:id/submit", async (req, res) => {
   const id = req.params.id;
