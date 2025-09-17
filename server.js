@@ -274,8 +274,7 @@ async function getRecentQuestionSet({ topic="", country="", days=14 }){
 
     return new Set(qRows.
 
-
-// Generate multiple-choice questions with GPT (family-friendly)
+// Generate multiple-choice questions with GPT (family-friendly, country + difficulty aware)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5, difficulty = "medium" }) {
   const model = process.env.AI_MODEL || "gpt-4o-mini";
 
@@ -283,7 +282,7 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
   const diff = String(difficulty || "medium").toLowerCase();
   const DIFF = (diff === "easy" || diff === "hard") ? diff : "medium";
 
-  // normalize country code (keep as hint; the model knows ISO-3166 codes)
+  // normalize country code
   const COUNTRY = String(country || "").trim().toUpperCase();
   const HAS_COUNTRY = !!COUNTRY;
 
@@ -296,7 +295,8 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
     "- 1 concise sentence per question.",
     "- Exactly 4 options with 1 correct.",
     "- correctIndex is the index (0-3) in options.",
-    "- Difficulty setting must be reflected in background knowledge required, specificity, and distractor plausibility."
+    "- Difficulty setting must be reflected in background knowledge required, specificity, and distractor plausibility.",
+    "- Prefer varied subtopics and avoid overused trivia items."
   ].join(" ");
 
   const difficultyGuide = DIFF === "easy" ? [
@@ -310,7 +310,6 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
       "- Medium: balanced difficulty, moderate specificity."
     ];
 
-  // Strong country enforcement
   const countryGuide = !HAS_COUNTRY ? [] : [
     `- Country focus: ISO 3166-1 alpha-2 code is "${COUNTRY}". Interpret it (e.g., IE=Ireland, GB=United Kingdom, US=United States).`,
     `- ${amount >= 5 ? "All or at least 4 of the" : "All"} questions must explicitly relate to that country (people, places, events, culture, sport, history, geography, etc.).`,
@@ -318,7 +317,7 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
     "- Include a healthy spread of subtopics within that country."
   ];
 
-  // If the topic is just “General”, make it clearly country-specific
+  // If topic is just “General”, make it country-specific
   const effectiveTopic = HAS_COUNTRY && /^general\b/i.test(String(topic))
     ? `General knowledge about the country "${COUNTRY}" (interpret the code to full country name).`
     : topic;
