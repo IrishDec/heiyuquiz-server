@@ -283,9 +283,23 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
 // GPT-powered quiz (live, uses topic + country) — now also persists to Supabase
+// GPT-powered quiz (AI) — persists to Supabase (best-effort)
 app.post("/api/createQuiz/ai", async (req, res) => {
   try {
-    const { category="General", topic="", country="", amount=5, durationSec=600 } = req.body || {};
+    const {
+      category = "General",
+      topic = "",
+      country = "",
+      amount = 5,
+      durationSec = 600
+    } = req.body || {};
+
+    // tiny debug log (non-blocking)
+    try { logCreate?.("ai", { category, topic, country, amount }); } catch {}
+
+    // guardrails
+    const safeAmount = Math.max(3, Math.min(10, Number(amount) || 5));
+    const safeDuration = Math.max(60, Math.min(3600, Number(durationSec) || 600)); // 1–60 min
 
     // sanitize topic; fallback to category if empty
     const { topic: safeTopic } = sanitizeTopic(topic || category);
@@ -293,34 +307,38 @@ app.post("/api/createQuiz/ai", async (req, res) => {
     // Generate questions via GPT
     const qs = await generateAIQuestions({
       topic: safeTopic,
-      country: (country || "").trim(),
-      amount: Math.max(3, Math.min(10, Number(amount) || 5)),
+      country: String(country || "").trim(),
+      amount: safeAmount,
     });
-    if (!qs.length) return res.status(500).json({ ok:false, error:"AI returned no questions" });
+    if (!qs.length) return res.status(500).json({ ok: false, error: "AI returned no questions" });
 
-    // Store in memory (unchanged)
+    // Store in memory
     const id = makeId();
     const createdAt = now();
-    const closesAt  = createdAt + durationSec * 1000;
-    quizzes.set(id, { id, category, createdAt, closesAt, questions: qs, topic: safeTopic, country: (country||"").trim() });
+    const closesAt  = createdAt + safeDuration * 1000;
+
+    quizzes.set(id, {
+      id, category, createdAt, closesAt,
+      questions: qs, topic: safeTopic, country: String(country || "").trim()
+    });
     submissions.set(id, []);
     participants.set(id, new Set());
 
-    // NEW: persist to Supabase (best-effort — errors just log)
+    // Persist to Supabase (best-effort — helper already logs errors)
     await dbSaveQuiz({
       id,
       category,
       topic: safeTopic,
-      country: (country || "").trim(),
+      country: String(country || "").trim(),
       createdAt,
       closesAt,
       questions: qs
     });
 
-    res.json({ ok:true, quizId:id, closesAt, provider:"ai" });
+    res.json({ ok: true, quizId: id, closesAt, provider: "ai", totalQuestions: qs.length });
   } catch (e) {
     console.error("createQuiz/ai error", e);
-    res.status(500).json({ ok:false, error:"AI quiz failed" });
+    res.status(500).json({ ok: false, error: "AI quiz failed" });
   }
 });
 
