@@ -477,11 +477,23 @@ app.get("/api/quiz/:id/results", async (req, res) => {
     results: sorted
   });
 });
-
-// Health check (client pings this)
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, where: 'render', now: Date.now() });
+// Health check (client pings this) — includes Supabase status
+app.get("/api/health", async (req, res) => {
+  let supabaseStatus = "off";
+  if (supabase) {
+    try {
+      const { error } = await supabase
+        .from("quizzes")
+        .select("id", { head: true, count: "exact" })
+        .limit(1);
+      supabaseStatus = error ? "connected-but-error" : "up";
+    } catch {
+      supabaseStatus = "connected-but-error";
+    }
+  }
+  res.json({ ok: true, where: "render", now: Date.now(), supabase: supabaseStatus });
 });
+
 // --- minimal debug logs for create endpoints
 function logCreate(kind, { category, topic, country, amount }) {
   console.log(`[create:${kind}] cat="${category}" topic="${(topic||'').slice(0,60)}" country="${country}" amount=${amount}`);
