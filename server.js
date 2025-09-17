@@ -254,8 +254,6 @@ app.post("/api/quiz/:id/submit", (req, res) => {
 
   res.json({ ok:true, score });
 });
-.json({ ok:true, score });
-});
 
 // Results (Winner → Loser)
 app.get("/api/quiz/:id/results", (req, res) => {
