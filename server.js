@@ -546,6 +546,12 @@ app.get("/api/quiz/:id/answers", async (req, res) => {
 
   res.json({ ok: true, id, questions });
 });
+// ---- Global error handler (prevents 502s, preserves CORS)
+app.use((err, req, res, next) => {
+  console.error("[express:error]", err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ ok: false, error: "server_error" });
+});
 
 
 app.listen(PORT, () => console.log("HeiyuQuiz server on", PORT));
