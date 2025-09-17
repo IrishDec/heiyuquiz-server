@@ -6,6 +6,123 @@ import OpenAI from "openai";
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY,
+  { auth: { persistSession: false } }
+);
+
+// Save quiz + its questions
+async function dbSaveQuiz({ id, category, topic = "", country = "", createdAt, closesAt, questions = [] }) {
+  try {
+    const { error: e1 } = await supabase
+      .from("quizzes")
+      .upsert(
+        {
+          id,
+          category,
+          topic,
+          country,
+          created_at: new Date(createdAt).toISOString(),
+          closes_at: new Date(closesAt).toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    if (e1) throw e1;
+
+    const rows = questions.map((q, i) => ({
+      quiz_id: id,
+      idx: i,
+      q: q.question || q.q || "",
+      options: q.options || [],
+      correct_idx: typeof q.correctIdx === "number" ? q.correctIdx : null,
+    }));
+
+    if (rows.length) {
+      await supabase.from("quiz_questions").delete().eq("quiz_id", id);
+      const { error: e2 } = await supabase.from("quiz_questions").insert(rows);
+      if (e2) throw e2;
+    }
+  } catch (err) {
+    console.warn("[supabase] dbSaveQuiz failed:", err?.message || err);
+  }
+}
+
+// Load a quiz (with questions)
+async function dbLoadQuiz(id) {
+  try {
+    const { data: qz, error: e1 } = await supabase
+      .from("quizzes")
+      .select("id, category, topic, country, closes_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (e1 || !qz) return null;
+
+    const { data: qs, error: e2 } = await supabase
+      .from("quiz_questions")
+      .select("idx, q, options, correct_idx")
+      .eq("quiz_id", id)
+      .order("idx", { ascending: true });
+    if (e2) throw e2;
+
+    return {
+      id: qz.id,
+      category: qz.category,
+      topic: qz.topic || "",
+      country: qz.country || "",
+      closesAt: qz.closes_at ? new Date(qz.closes_at).getTime() : undefined,
+      questions: (qs || []).map((r) => ({
+        question: r.q || "",
+        options: r.options || [],
+        correctIdx: typeof r.correct_idx === "number" ? r.correct_idx : null,
+      })),
+    };
+  } catch (err) {
+    console.warn("[supabase] dbLoadQuiz failed:", err?.message || err);
+    return null;
+  }
+}
+
+// Save a submission
+async function dbSaveSubmission(quizId, { name, score, submittedAt }) {
+  try {
+    const { error } = await supabase
+      .from("quiz_submissions")
+      .insert({
+        quiz_id: quizId,
+        name,
+        score,
+        submitted_at: new Date(submittedAt).toISOString(),
+      });
+    if (error) throw error;
+  } catch (err) {
+    console.warn("[supabase] dbSaveSubmission failed:", err?.message || err);
+  }
+}
+
+// Load submissions (results)
+async function dbLoadResults(id) {
+  try {
+    const { data, error } = await supabase
+      .from("quiz_submissions")
+      .select("name, score, submitted_at")
+      .eq("quiz_id", id);
+    if (error) throw error;
+
+    return (data || [])
+      .map((r) => ({
+        name: r.name,
+        score: r.score,
+        submittedAt: r.submitted_at ? new Date(r.submitted_at).getTime() : 0,
+      }))
+      .sort((a, b) => b.score - a.score || a.submittedAt - b.submittedAt);
+  } catch (err) {
+    console.warn("[supabase] dbLoadResults failed:", err?.message || err);
+    return [];
+  }
+}
 
 
 const app = express();
