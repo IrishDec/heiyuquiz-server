@@ -310,7 +310,6 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-
 // GPT-powered quiz (AI) — persists to Supabase (best-effort)
 app.post("/api/createQuiz/ai", async (req, res) => {
   try {
@@ -319,24 +318,28 @@ app.post("/api/createQuiz/ai", async (req, res) => {
       topic = "",
       country = "",
       amount = 5,
-      durationSec = 600
+      durationSec = 600,
+      difficulty = "medium"                  // ⬅️ NEW
     } = req.body || {};
 
     // tiny debug log (non-blocking)
-    try { logCreate?.("ai", { category, topic, country, amount }); } catch {}
+    try { logCreate?.("ai", { category, topic, country, amount, difficulty }); } catch {}
 
     // guardrails
-    const safeAmount = Math.max(3, Math.min(10, Number(amount) || 5));
+    const safeAmount   = Math.max(3, Math.min(10, Number(amount) || 5));
     const safeDuration = Math.max(60, Math.min(3600, Number(durationSec) || 600)); // 1–60 min
+    const diff = String(difficulty || "medium").toLowerCase();
+    const safeDifficulty = (diff === "easy" || diff === "hard") ? diff : "medium"; // ⬅️ NEW
 
     // sanitize topic; fallback to category if empty
     const { topic: safeTopic } = sanitizeTopic(topic || category);
 
-    // Generate questions via GPT
+    // Generate questions via GPT (now honors difficulty)
     const qs = await generateAIQuestions({
       topic: safeTopic,
       country: String(country || "").trim(),
       amount: safeAmount,
+      difficulty: safeDifficulty             // ⬅️ NEW
     });
     if (!qs.length) return res.status(500).json({ ok: false, error: "AI returned no questions" });
 
@@ -348,27 +351,7 @@ app.post("/api/createQuiz/ai", async (req, res) => {
     quizzes.set(id, {
       id, category, createdAt, closesAt,
       questions: qs, topic: safeTopic, country: String(country || "").trim()
-    });
-    submissions.set(id, []);
-    participants.set(id, new Set());
 
-    // Persist to Supabase (best-effort — helper already logs errors)
-    await dbSaveQuiz({
-      id,
-      category,
-      topic: safeTopic,
-      country: String(country || "").trim(),
-      createdAt,
-      closesAt,
-      questions: qs
-    });
-
-    res.json({ ok: true, quizId: id, closesAt, provider: "ai", totalQuestions: qs.length });
-  } catch (e) {
-    console.error("createQuiz/ai error", e);
-    res.status(500).json({ ok: false, error: "AI quiz failed" });
-  }
-});
 
 
 // Get quiz for players (no answers leaked). Falls back to Supabase if memory miss.
