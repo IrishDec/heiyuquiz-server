@@ -381,7 +381,6 @@ app.get("/api/quiz/:id", async (req, res) => {
     questions: publicQs
   });
 });
-/api/quiz/:id/submit
 
 // Results (Winner → Loser). Falls back to Supabase if memory miss.
 app.get("/api/quiz/:id/results", async (req, res) => {
