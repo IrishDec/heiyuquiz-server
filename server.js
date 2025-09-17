@@ -239,8 +239,12 @@ function decodeHTML(s=""){
 }
 
 // Generate multiple-choice questions with GPT (family-friendly)
-async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5 }) {
+async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5, difficulty = "medium" }) {
   const model = process.env.AI_MODEL || "gpt-4o-mini";
+
+  // normalize difficulty
+  const diff = String(difficulty || "medium").toLowerCase();
+  const DIFF = (diff === "easy" || diff === "hard") ? diff : "medium";
 
   const sys = [
     "You generate family-friendly multiple-choice trivia.",
@@ -251,11 +255,27 @@ async function generateAIQuestions({ topic = "general knowledge", country = "", 
     "- 1 concise sentence per question.",
     "- Exactly 4 options with 1 correct.",
     "- correctIndex is the index (0-3) in options.",
+    "- Difficulty setting must be reflected in background knowledge required, specificity, and distractor plausibility."
   ].join(" ");
 
-  const user = `Create ${amount} questions.
-Topic: ${topic}.
-${country ? `Bias facts/examples to ${country}.` : ""}`;
+  const difficultyGuide = DIFF === "easy" ? [
+      "- Easy: everyday knowledge, high get-rate, no niche facts.",
+      "- Use simple wording and common topics."
+    ] : DIFF === "hard" ? [
+      "- Hard: advanced/specific knowledge, lower get-rate.",
+      "- Include nuanced details, dates, lesser-known facts.",
+      "- Use plausible distractors that are close to the truth."
+    ] : [
+      "- Medium: balanced difficulty, moderate specificity."
+    ];
+
+  const user = [
+    `Create ${amount} questions.`,
+    `Topic: ${topic}.`,
+    country ? `Bias facts/examples to ${country}.` : "",
+    `Difficulty: ${DIFF}.`,
+    ...difficultyGuide
+  ].filter(Boolean).join("\n");
 
   const resp = await openai.chat.completions.create({
     model,
@@ -279,12 +299,12 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
     const options = Array.isArray(it.options) ? it.options.slice(0,4).map(decodeHTML) : [];
     let correctIdx = Number.isInteger(it.correctIndex) ? it.correctIndex : null;
 
-    // Safety: if model didn't give a valid correctIndex, just pick index 0
-    if (!(correctIdx >= 0 && correctIdx < 4)) correctIdx = 0;
+    if (!(correctIdx >= 0 && correctIdx < 4)) correctIdx = 0; // safety
 
     return { question: q, options, correctIdx };
   });
 }
+
 
 
 // Health
