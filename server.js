@@ -103,24 +103,25 @@ async function dbLoadResults(id){ if (!supabase) return [];
       .sort((a,b)=> b.score - a.score || a.submittedAt - b.submittedAt);
   } catch (err){ console.warn("[supabase] dbLoadResults failed:", err?.message||err); return []; }
 }
-
-
-
 const app = express();
 
-app.use(cors({
+// CORS — allow your site + localhost (and handle preflight)
+const corsOptions = {
   origin: [
-    'https://www.heiyuquiz.com',
-    'https://irishdec.github.io'
+    /^http:\/\/localhost(:\d+)?$/,          // local dev
+    /^https?:\/\/(www\.)?heiyuquiz\.com$/,  // your site
+    /^https?:\/\/irishdec\.github\.io$/     // (keep if you still host here)
   ],
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-}));
+  methods: ["GET","POST","OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+  maxAge: 86400
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight
 
 app.use(express.json());
 
 const PORT = process.env.PORT || 4001;
-
 
 // ===== In-memory stores (MVP). Move to a DB later. =====
 const quizzes = new Map();       // id -> { id, category, createdAt, closesAt, questions:[{question, options, correctIdx}] }
