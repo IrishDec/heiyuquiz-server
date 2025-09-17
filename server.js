@@ -300,7 +300,7 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// GPT-powered quiz (live, uses topic + country)
+// GPT-powered quiz (live, uses topic + country) — now also persists to Supabase
 app.post("/api/createQuiz/ai", async (req, res) => {
   try {
     const { category="General", topic="", country="", amount=5, durationSec=600 } = req.body || {};
@@ -314,17 +314,26 @@ app.post("/api/createQuiz/ai", async (req, res) => {
       country: (country || "").trim(),
       amount: Math.max(3, Math.min(10, Number(amount) || 5)),
     });
-
     if (!qs.length) return res.status(500).json({ ok:false, error:"AI returned no questions" });
 
-    // Store quiz (same shape as OpenTDB path)
+    // Store in memory (unchanged)
     const id = makeId();
-    const createdAt = Date.now();
-    const closesAt  = createdAt + (durationSec * 1000);
-
-    quizzes.set(id, { id, category, createdAt, closesAt, questions: qs });
+    const createdAt = now();
+    const closesAt  = createdAt + durationSec * 1000;
+    quizzes.set(id, { id, category, createdAt, closesAt, questions: qs, topic: safeTopic, country: (country||"").trim() });
     submissions.set(id, []);
     participants.set(id, new Set());
+
+    // NEW: persist to Supabase (best-effort — errors just log)
+    await dbSaveQuiz({
+      id,
+      category,
+      topic: safeTopic,
+      country: (country || "").trim(),
+      createdAt,
+      closesAt,
+      questions: qs
+    });
 
     res.json({ ok:true, quizId:id, closesAt, provider:"ai" });
   } catch (e) {
@@ -336,18 +345,50 @@ app.post("/api/createQuiz/ai", async (req, res) => {
 
 
 
-// Get quiz for players (no answers leaked)
-app.get("/api/quiz/:id", (req, res) => {
-  const quiz = quizzes.get(req.params.id);
+
+// Get quiz for players (no answers leaked). Falls back to Supabase if memory miss.
+app.get("/api/quiz/:id", async (req, res) => {
+  let quiz = quizzes.get(req.params.id);
+
+  // If not in memory (because server restarted/slept), try Supabase
+  if (!quiz) {
+    const fromDb = await dbLoadQuiz(req.params.id);
+    if (fromDb && (fromDb.questions || []).length) {
+      quiz = {
+        id: fromDb.id,
+        category: fromDb.category || "General",
+        createdAt: now(),                          // unknown; not needed by clients
+        closesAt: fromDb.closesAt ?? (now() + 86400*1000),
+        questions: fromDb.questions,
+        topic: fromDb.topic || "",
+        country: fromDb.country || ""
+      };
+      quizzes.set(quiz.id, quiz);                  // cache for this process
+      submissions.set(quiz.id, submissions.get(quiz.id) || []); // keep shape
+      participants.set(quiz.id, participants.get(quiz.id) || new Set());
+    }
+  }
+
   if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
+
   const open = now() <= quiz.closesAt;
   const publicQs = quiz.questions.map(q => ({ q: q.question, options: q.options }));
-  res.json({ ok:true, id:quiz.id, category:quiz.category, closesAt:quiz.closesAt, open, questions: publicQs });
+  res.json({
+    ok:true,
+    id:quiz.id,
+    category:quiz.category,
+    topic: quiz.topic || "",
+    country: quiz.country || "",
+    closesAt:quiz.closesAt,
+    open,
+    questions: publicQs
+  });
 });
 
-// Submit answers (one per player fingerprint)
-app.post("/api/quiz/:id/submit", (req, res) => {
-  const quiz = quizzes.get(req.params.id);
+
+// Submit answers (one per player fingerprint) — also persists to Supabase
+app.post("/api/quiz/:id/submit", async (req, res) => {
+  const quiz = quizzes.get(req.params.id) || null;
   if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
 
   const { name = "Player", picks = [] } = req.body || {};
@@ -363,7 +404,7 @@ app.post("/api/quiz/:id/submit", (req, res) => {
     return res.status(503).json({ ok:false, error:"Quiz is at capacity, please try another round." });
   }
 
-  // ⛔ NEW: block duplicate submissions from the same fingerprint
+  // Block duplicate submissions from the same fingerprint
   const rows = submissions.get(quiz.id) || [];
   if (rows.some(r => r.fp === fp)) {
     return res.status(409).json({ ok:false, error:"You already submitted this quiz." });
@@ -373,13 +414,55 @@ app.post("/api/quiz/:id/submit", (req, res) => {
   let score = 0;
   quiz.questions.forEach((q, i) => { if (Number(picks[i]) === q.correctIdx) score++; });
 
-  // Store result with fp (fp is not exposed to clients elsewhere)
-  const row = { name: cleanName, score, submittedAt: Date.now(), fp };
+  // Save in memory
+  const row = { name: cleanName, score, submittedAt: now(), fp };
   partSet.add(fp);
   participants.set(quiz.id, partSet);
   submissions.set(quiz.id, [...rows, row]);
 
+  // NEW: persist to Supabase (best-effort)
+  dbSaveSubmission(quiz.id, { name: cleanName, score, submittedAt: row.submittedAt }).catch(() => {});
+
   res.json({ ok:true, score });
+});
+
+// Results (Winner → Loser). Falls back to Supabase if memory miss.
+app.get("/api/quiz/:id/results", async (req, res) => {
+  let quiz = quizzes.get(req.params.id) || null;
+  let rows  = (submissions.get(req.params.id) || []).slice();
+
+  // If nothing in memory, pull from DB
+  if (!quiz) {
+    const fromDb = await dbLoadQuiz(req.params.id);
+    if (fromDb) {
+      quiz = {
+        id: fromDb.id,
+        category: fromDb.category || "General",
+        createdAt: now(),
+        closesAt: fromDb.closesAt ?? (now() + 86400*1000),
+        questions: fromDb.questions || [],
+        topic: fromDb.topic || "",
+        country: fromDb.country || ""
+      };
+      quizzes.set(quiz.id, quiz);
+    }
+  }
+  if (!rows.length) {
+    rows = await dbLoadResults(req.params.id);
+  }
+
+  // Shape + sort (keep existing behavior)
+  const sorted = rows
+    .map(r => ({ name: r.name, score: r.score, submittedAt: r.submittedAt }))
+    .sort((a,b) => b.score - a.score || a.submittedAt - b.submittedAt);
+
+  res.json({
+    ok:true,
+    id: req.params.id,
+    category: quiz?.category || "General",
+    totalQuestions: quiz?.questions?.length ?? 0,
+    results: sorted
+  });
 });
 
 // Results (Winner → Loser)
