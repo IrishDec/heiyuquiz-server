@@ -105,17 +105,25 @@ async function dbLoadResults(id){ if (!supabase) return [];
 }
 const app = express();
 
-// CORS — allow your site + localhost (and handle preflight)
+// CORS — allow your site + localhost + github pages (robust function)
+const ALLOWED = [
+  /^http:\/\/localhost(:\d+)?$/,
+  /^https?:\/\/(www\.)?heiyuquiz\.com$/,
+  /^https?:\/\/irishdec\.github\.io$/
+];
+
 const corsOptions = {
-  origin: [
-    /^http:\/\/localhost(:\d+)?$/,          // local dev
-    /^https?:\/\/(www\.)?heiyuquiz\.com$/,  // your site
-    /^https?:\/\/irishdec\.github\.io$/     // (keep if you still host here)
-  ],
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // curl / same-origin
+    const ok = ALLOWED.some(rx => rx.test(origin));
+    return cb(null, ok);
+  },
   methods: ["GET","POST","OPTIONS"],
   allowedHeaders: ["Content-Type"],
+  credentials: false,
   maxAge: 86400
 };
+
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions)); // preflight
 
