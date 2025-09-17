@@ -237,6 +237,43 @@ function decodeHTML(s=""){
     .replace(/&rsquo;/g,"’").replace(/&ldquo;/g,'“')
     .replace(/&rdquo;/g,'”');
 }
+// --- De-dup helpers (normalize + recent fetch) ---
+function normalizeQ(s=""){
+  return String(s)
+    .toLowerCase()
+    .replace(/&[a-z]+;|&#\d+;/g, " ")   // strip html entities
+    .replace(/[^a-z0-9]+/g, " ")        // keep alnum
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function getRecentQuestionSet({ topic="", country="", days=14 }){
+  if (!supabase) return new Set();
+  try{
+    const since = new Date(Date.now() - days*24*3600*1000).toISOString();
+
+    // recent quiz ids for same topic/country
+    let q1 = supabase.from("quizzes")
+      .select("id")
+      .gte("created_at", since);
+
+    if (topic)   q1 = q1.eq("topic", topic);
+    if (country) q1 = q1.eq("country", country);
+
+    const { data: quizRows, error: e1 } = await q1;
+    if (e1 || !quizRows?.length) return new Set();
+
+    const ids = quizRows.map(r => r.id);
+
+    // their questions
+    const { data: qRows, error: e2 } = await supabase
+      .from("quiz_questions")
+      .select("q, quiz_id")
+      .in("quiz_id", ids.slice(0, 100)); // safety cap
+    if (e2 || !qRows?.length) return new Set();
+
+    return new Set(qRows.
+
 
 // Generate multiple-choice questions with GPT (family-friendly)
 async function generateAIQuestions({ topic = "general knowledge", country = "", amount = 5, difficulty = "medium" }) {
