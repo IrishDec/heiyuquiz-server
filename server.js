@@ -460,17 +460,6 @@ app.get("/api/quiz/:id/results", async (req, res) => {
   });
 });
 
-// Results (Winner → Loser)
-app.get("/api/quiz/:id/results", (req, res) => {
-  const quiz = quizzes.get(req.params.id);
-  if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
-  const rows = (submissions.get(quiz.id) || []).slice()
-    .sort((a,b) => b.score - a.score || a.submittedAt - b.submittedAt);
-  res.json({
-    ok:true, id:quiz.id, category:quiz.category,
-    totalQuestions: quiz.questions.length, results: rows
-  });
-});
 // Health check (client pings this)
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, where: 'render', now: Date.now() });
