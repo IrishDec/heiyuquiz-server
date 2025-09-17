@@ -486,13 +486,32 @@ app.get('/api/health', (req, res) => {
 function logCreate(kind, { category, topic, country, amount }) {
   console.log(`[create:${kind}] cat="${category}" topic="${(topic||'').slice(0,60)}" country="${country}" amount=${amount}`);
 }
-
-
-// Answers: return sanitized questions with a reliable correctIndex
-app.get("/api/quiz/:id/answers", (req, res) => {
+// Answers: return sanitized questions with a reliable correctIndex (falls back to Supabase)
+app.get("/api/quiz/:id/answers", async (req, res) => {
   const { id } = req.params;
-  const quiz = quizzes.get(id);
-  if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
+
+  let quiz = quizzes.get(id);
+
+  // If not in memory, try Supabase
+  if (!quiz) {
+    const fromDb = await dbLoadQuiz(id);
+    if (fromDb && (fromDb.questions || []).length) {
+      quiz = {
+        id: fromDb.id,
+        category: fromDb.category || "General",
+        createdAt: now(),
+        closesAt: fromDb.closesAt ?? (now() + 86400 * 1000),
+        questions: fromDb.questions || [],
+        topic: fromDb.topic || "",
+        country: fromDb.country || ""
+      };
+      quizzes.set(id, quiz);
+      submissions.set(id, submissions.get(id) || []);
+      participants.set(id, participants.get(id) || new Set());
+    }
+  }
+
+  if (!quiz) return res.status(404).json({ ok: false, error: "Quiz not found" });
 
   const questions = (quiz.questions || []).map(q => ({
     q: q.question || q.q || "",
@@ -500,7 +519,7 @@ app.get("/api/quiz/:id/answers", (req, res) => {
     correctIndex: (typeof q.correctIdx === "number" ? q.correctIdx : null)
   }));
 
-  res.json({ ok:true, id, questions });
+  res.json({ ok: true, id, questions });
 });
 
 
