@@ -454,6 +454,22 @@ app.post("/api/createQuiz/ai", async (req, res) => {
   }
 });
 
+// --- Debug: check if a quiz exists in memory and in DB
+app.get("/api/debug/quiz/:id", async (req, res) => {
+  const id = req.params.id;
+  const inMemory = quizzes.has(id);
+  let dbQuiz = null;
+  try { dbQuiz = await dbLoadQuiz(id); } catch {}
+
+  res.json({
+    ok: true,
+    id,
+    inMemory,
+    db: !!dbQuiz,
+    qCountMem: inMemory ? (quizzes.get(id)?.questions?.length || 0) : 0,
+    qCountDb: dbQuiz?.questions?.length || 0
+  });
+});
 
 
 
