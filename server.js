@@ -282,7 +282,7 @@ ${country ? `Bias facts/examples to ${country}.` : ""}`;
 // Health
 app.get("/", (_, res) => res.send("HeiyuQuiz server running"));
 
-// GPT-powered quiz (live, uses topic + country) — now also persists to Supabase
+
 // GPT-powered quiz (AI) — persists to Supabase (best-effort)
 app.post("/api/createQuiz/ai", async (req, res) => {
   try {
