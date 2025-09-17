@@ -292,27 +292,6 @@ app.get("/api/quiz/:id/answers", (req, res) => {
 
   res.json({ ok:true, id, questions });
 });
-// GPT-powered quiz (beta) — does NOT replace /api/createQuiz
-app.post("/api/createQuiz/ai", async (req, res) => {
-  try {
-    const { category="General", topic="", country="", amount=5, durationSec=600 } = req.body || {};
 
-    // testing location Qs
-    const qs = await getQuestions(catMap[category] ?? "", amount);
-
-    const id = makeId();
-    const createdAt = now();
-    const closesAt = createdAt + durationSec * 1000;
-
-    quizzes.set(id, { id, category, createdAt, closesAt, questions: qs });
-    submissions.set(id, []);
-    participants.set(id, new Set());
-
-    res.json({ ok:true, quizId:id, closesAt, provider:"ai" });
-  } catch (e) {
-    console.error("createQuiz/ai error", e);
-    res.status(500).json({ ok:false, error:"AI quiz failed" });
-  }
-});
 
 app.listen(PORT, () => console.log("HeiyuQuiz server on", PORT));
