@@ -9,10 +9,20 @@ const openai = new OpenAI({
 
 
 const app = express();
-app.use(cors());
+
+app.use(cors({
+  origin: [
+    'https://www.heiyuquiz.com',
+    'https://irishdec.github.io'
+  ],
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 4001;
+
 
 // ===== In-memory stores (MVP). Move to a DB later. =====
 const quizzes = new Map();       // id -> { id, category, createdAt, closesAt, questions:[{question, options, correctIdx}] }
