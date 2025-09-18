@@ -82,13 +82,15 @@ async function dbLoadQuiz(id){ if (!supabase) return null;
   } catch (err){ console.warn("[supabase] dbLoadQuiz failed:", err?.message||err); return null; }
 }
 
-async function dbSaveSubmission(quizId, { name, score, picks = [], submittedAt }) { if (!supabase) return;
+async function dbSaveSubmission(quizId, { name, score, picks = [], sid = null, submittedAt }) {
+  if (!supabase) return;
   try {
     const { error } = await supabase.from("quiz_submissions").insert({
       quiz_id: quizId,
       name,
       score,
-      picks, // <-- JSON/JSONB column in your table
+      picks,                       // jsonb array
+      sid,                         // 6-char receipt code
       submitted_at: new Date(submittedAt).toISOString()
     });
     if (error) throw error;
@@ -96,6 +98,7 @@ async function dbSaveSubmission(quizId, { name, score, picks = [], submittedAt }
     console.warn("[supabase] dbSaveSubmission failed:", err?.message || err);
   }
 }
+
 
 
 async function dbLoadResults(id){ if (!supabase) return [];
