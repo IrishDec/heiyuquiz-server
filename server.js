@@ -560,33 +560,45 @@ app.post("/api/quiz/:id/submit", async (req, res) => {
     return res.status(503).json({ ok: false, error: "Quiz is at capacity, please try another round." });
   }
 
+  const rows = submissions.get(id) || [];
+  if (rows.some(r => r.fp === fp)) {
+    return res.status(409).json({ ok: false, error: "You already submitted this quiz." });
+  }
+
+  // score + normalize picks (ints or null)
+  const answers = Array.isArray(picks) ? picks : [];
+  const safePicks = (quiz.questions || []).map((_, i) => {
+    const v = Number(answers[i]);
+    return Number.isInteger(v) ? v : null;
+  });
+
   let score = 0;
-  const answers = Array.isArray(picks) ? picks : [];        // <- keep picks as an array
   (quiz.questions || []).forEach((q, i) => {
-    const pick = Number(answers[i]);
+    const pick = safePicks[i];
     if (Number.isInteger(pick) && pick === q.correctIdx) score++;
   });
 
-  // include picks in the saved row
-  const row = { name: cleanName, score, picks: answers, submittedAt: now(), fp };
+  const submittedAt = now();
+  const sid = makeId(); // 6-char receipt code (re-uses your makeId)
+
+  const row = { name: cleanName, score, picks: safePicks, sid, submittedAt, fp };
 
   // update memory + persist
   partSet.add(fp);
   participants.set(id, partSet);
-  const rows = submissions.get(id) || [];
   submissions.set(id, [...rows, row]);
 
-  // include picks when saving to Supabase
   await dbSaveSubmission(id, {
     name: cleanName,
     score,
-    picks: answers,
-    submittedAt: row.submittedAt
+    picks: safePicks,
+    sid,
+    submittedAt
   });
 
-  res.json({ ok: true, score });
+  // return sid so client can recover answers later
+  res.json({ ok: true, score, sid });
 });
-
 
 
 // Results (Winner → Loser). Falls back to Supabase if memory miss.
