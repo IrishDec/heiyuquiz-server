@@ -600,6 +600,75 @@ app.post("/api/quiz/:id/submit", async (req, res) => {
   res.json({ ok: true, score, sid });
 });
 
+// Recover a submission by sid (best) or by name (fallback)
+app.get("/api/quiz/:id/submission", async (req, res) => {
+  const id   = req.params.id;
+  const sid  = (req.query.sid  || "").toString().trim();
+  const name = (req.query.name || "").toString().trim();
+
+  if (!sid && !name) {
+    return res.status(400).json({ ok:false, error:"sid_or_name_required" });
+  }
+
+  // 1) Try in-memory first
+  const rows = submissions.get(id) || [];
+  let row = null;
+  if (sid)  row = rows.find(r => r.sid === sid);
+  if (!row && name) {
+    const needle = name.toLowerCase();
+    row = rows.find(r => (r.name || "").toLowerCase() === needle);
+  }
+
+  // 2) If not found, try Supabase
+  if (!row && supabase) {
+    try {
+      if (sid) {
+        const { data, error } = await supabase
+          .from("quiz_submissions")
+          .select("name, score, picks, sid, submitted_at")
+          .eq("quiz_id", id)
+          .eq("sid", sid)
+          .maybeSingle();
+        if (!error && data) row = data;
+      } else if (name) {
+        const { data, error } = await supabase
+          .from("quiz_submissions")
+          .select("name, score, picks, sid, submitted_at")
+          .eq("quiz_id", id)
+          .ilike("name", name)          // case-insensitive match
+          .order("submitted_at", { ascending:false })
+          .limit(1);
+        if (!error && Array.isArray(data) && data[0]) row = data[0];
+      }
+    } catch (e) {
+      console.warn("[supabase] recover failed:", e?.message || e);
+    }
+  }
+
+  if (!row) return res.status(404).json({ ok:false, error:"submission_not_found" });
+
+  // normalize picks to array of ints/null
+  const toPicks = (v) => {
+    let a = v;
+    if (typeof v === "string") { try { a = JSON.parse(v); } catch { a = []; } }
+    if (!Array.isArray(a)) a = [];
+    return a.map(x => {
+      const n = Number(x);
+      return Number.isInteger(n) ? n : null;
+    });
+  };
+
+  const payload = {
+    ok: true,
+    name: row.name || "",
+    score: Number(row.score) || 0,
+    picks: toPicks(row.picks),
+    sid: row.sid || null,
+    submittedAt: row.submittedAt || row.submitted_at || null
+  };
+  return res.json(payload);
+});
+
 
 // Results (Winner → Loser). Falls back to Supabase if memory miss.
 app.get("/api/quiz/:id/results", async (req, res) => {
