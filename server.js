@@ -396,7 +396,9 @@ app.post("/api/createQuiz/ai", async (req, res) => {
     try { logCreate?.("ai", { category, topic, country, amount, difficulty }); } catch {}
 
     const safeAmount   = Math.max(3, Math.min(10, Number(amount) || 5));
-    const safeDuration = Math.max(60, Math.min(3600, Number(durationSec) || 600));
+   // Force all quizzes to last 24 hours
+    const safeDuration = 24 * 3600; // 24 hours in seconds
+
     const diff = String(difficulty || "medium").toLowerCase();
     const safeDifficulty = (diff === "easy" || diff === "hard") ? diff : "medium";
 
