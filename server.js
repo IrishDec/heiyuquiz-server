@@ -510,19 +510,29 @@ app.get("/api/quiz/:id", async (req, res) => {
 
   if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
 
-  const open = now() <= quiz.closesAt;
-  const publicQs = quiz.questions.map(q => ({ q: q.question, options: q.options }));
-  res.json({
-    ok:true,
-    id:quiz.id,
-    category:quiz.category,
-    topic: quiz.topic || "",
-    country: quiz.country || "",
-    closesAt:quiz.closesAt,
-    open,
-    questions: publicQs
+ const open = now() <= quiz.closesAt;
+
+if (!open) {
+  return res.json({
+    ok: false,
+    error: "quiz_closed",
+    closesAt: quiz.closesAt,
+    open: false
   });
+}
+
+const publicQs = quiz.questions.map(q => ({ q: q.question, options: q.options }));
+res.json({
+  ok:true,
+  id:quiz.id,
+  category:quiz.category,
+  topic: quiz.topic || "",
+  country: quiz.country || "",
+  closesAt:quiz.closesAt,
+  open: true,
+  questions: publicQs
 });
+
     
 // Submit answers (one per player fingerprint) + persist to Supabase (with DB fallback)
 app.post("/api/quiz/:id/submit", async (req, res) => {
