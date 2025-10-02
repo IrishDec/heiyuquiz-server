@@ -483,8 +483,6 @@ app.get("/api/debug/quiz/:id", async (req, res) => {
   });
 });
 
-
-
 // Get quiz for players (no answers leaked). Falls back to Supabase if memory miss.
 app.get("/api/quiz/:id", async (req, res) => {
   let quiz = quizzes.get(req.params.id);
@@ -508,32 +506,34 @@ app.get("/api/quiz/:id", async (req, res) => {
     }
   }
 
-  if (!quiz) return res.status(404).json({ ok:false, error:"Quiz not found" });
+  if (!quiz) {
+    return res.status(404).json({ ok:false, error:"Quiz not found" });
+  }
 
- const open = now() <= quiz.closesAt;
+  const open = now() <= quiz.closesAt;
 
-if (!open) {
+  if (!open) {
+    return res.json({
+      ok: false,
+      error: "quiz_closed",
+      closesAt: quiz.closesAt,
+      open: false
+    });
+  }
+
+  const publicQs = quiz.questions.map(q => ({ q: q.question, options: q.options }));
   return res.json({
-    ok: false,
-    error: "quiz_closed",
-    closesAt: quiz.closesAt,
-    open: false
+    ok:true,
+    id:quiz.id,
+    category:quiz.category,
+    topic: quiz.topic || "",
+    country: quiz.country || "",
+    closesAt:quiz.closesAt,
+    open: true,
+    questions: publicQs
   });
-}
+}); 
 
-const publicQs = quiz.questions.map(q => ({ q: q.question, options: q.options }));
-res.json({
-  ok:true,
-  id:quiz.id,
-  category:quiz.category,
-  topic: quiz.topic || "",
-  country: quiz.country || "",
-  closesAt:quiz.closesAt,
-  open: true,
-  questions: publicQs
-});
-
-    
 // Submit answers (one per player fingerprint) + persist to Supabase (with DB fallback)
 app.post("/api/quiz/:id/submit", async (req, res) => {
   const id = req.params.id;
