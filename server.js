@@ -10,19 +10,20 @@ const openai = new OpenAI({
 import { createClient } from "@supabase/supabase-js"; 
 
 // Only init if BOTH env vars exist; otherwise run in memory-only mode.
-const HAS_SUPABASE = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
+const HAS_SUPABASE = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 let supabase = null;
 
 if (HAS_SUPABASE) {
   supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,   // use service role here
     { auth: { persistSession: false } }
   );
-  console.log("[supabase] ON");
+  console.log("[supabase] ON (service role)");
 } else {
-  console.warn("[supabase] OFF — missing SUPABASE_URL and/or SUPABASE_ANON_KEY");
+  console.warn("[supabase] OFF — missing SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY");
 }
+
 
 // Helpers become no-ops if Supabase is OFF
 async function dbSaveQuiz(payload){ if (!supabase) return;
