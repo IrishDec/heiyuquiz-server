@@ -64,36 +64,49 @@ async function dbSaveQuiz(payload) {
   }
 }
 
-
-
-async function dbLoadQuiz(id){ if (!supabase) return null;
+async function dbLoadQuiz(id){ 
+  if (!supabase) return null;
   try {
+    // quiz header
     const { data: qz, error: e1 } = await supabase
       .from("quizzes")
       .select("id, category, topic, country, closes_at")
-      .eq("id", id).maybeSingle();
+      .eq("id", id)
+      .maybeSingle();
     if (e1 || !qz) return null;
 
+    // questions — select both old and new column names for safety
     const { data: qs, error: e2 } = await supabase
       .from("quiz_questions")
-      .select("idx, q, options, correct_idx")
-      .eq("quiz_id", id).order("idx", { ascending:true });
+      .select("q_index, idx, q, options, correct_index, correct_idx")
+      .eq("quiz_id", id)
+      .order("q_index", { ascending: true })      // prefer new column for ordering
+      .order("idx", { ascending: true, nullsFirst: false }); // fallback if old data
     if (e2) throw e2;
 
+    // map DB -> in-memory shape expected by the app
+    const questions = (qs || []).map(r => ({
+      question: r.q || "",
+      options: r.options || [],
+      correctIdx: (typeof r.correct_index === "number")
+                    ? r.correct_index
+                    : (typeof r.correct_idx === "number" ? r.correct_idx : null)
+    }));
+
     return {
-      id:qz.id,
-      category:qz.category,
-      topic:qz.topic||"",
-      country:qz.country||"",
+      id: qz.id,
+      category: qz.category,
+      topic: qz.topic || "",
+      country: qz.country || "",
       closesAt: qz.closes_at ? new Date(qz.closes_at).getTime() : undefined,
-      questions:(qs||[]).map(r=>({
-        question:r.q||"",
-        options:r.options||[],
-        correctIdx:(typeof r.correct_idx==="number"? r.correct_idx:null)
-      }))
+      questions
     };
-  } catch (err){ console.warn("[supabase] dbLoadQuiz failed:", err?.message||err); return null; }
+  } catch (err){
+    console.warn("[supabase] dbLoadQuiz failed:", err?.message || err);
+    return null;
+  }
 }
+
 
 async function dbSaveSubmission(quizId, { name, score, picks = [], sid = null, submittedAt }) {
   if (!supabase) return;
