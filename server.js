@@ -24,14 +24,18 @@ if (HAS_SUPABASE) {
   console.warn("[supabase] OFF — missing SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY");
 }
 
-
-// Helpers become no-ops if Supabase is OFF
-async function dbSaveQuiz(payload){ if (!supabase) return;
+async function dbSaveQuiz(payload) {
+  if (!supabase) return;
   try {
-    const { id, category, topic="", country="", createdAt, closesAt, questions=[] } = payload;
+    const { id, category, topic = "", country = "", createdAt, closesAt, questions = [] } = payload;
+
+    // Upsert the quiz header row
     const { error: e1 } = await supabase.from("quizzes").upsert(
       {
-        id, category, topic, country,
+        id,
+        category,
+        topic,
+        country,
         created_at: new Date(createdAt).toISOString(),
         closes_at: new Date(closesAt).toISOString(),
       },
@@ -39,20 +43,28 @@ async function dbSaveQuiz(payload){ if (!supabase) return;
     );
     if (e1) throw e1;
 
-    const rows = questions.map((q,i)=>({
-      quiz_id:id, idx:i,
-      q:q.question||q.q||"",
-      options:q.options||[],
-      correct_idx: (typeof q.correctIdx==="number"? q.correctIdx : null)
+    // Build rows for quiz_questions
+    const rows = questions.map((q, i) => ({
+      quiz_id: id,
+      q_index: i, // ✅ matches schema
+      q: q.question || q.q || "",
+      options: q.options || [],
+      correct_index: (typeof q.correctIdx === "number" ? q.correctIdx : null) // ✅ matches schema
     }));
 
-    if (rows.length){
+    // Replace any existing questions for this quiz and insert new ones
+    if (rows.length) {
       await supabase.from("quiz_questions").delete().eq("quiz_id", id);
       const { error: e2 } = await supabase.from("quiz_questions").insert(rows);
       if (e2) throw e2;
     }
-  } catch (err) { console.warn("[supabase] dbSaveQuiz failed:", err?.message||err); }
+
+  } catch (err) {
+    console.warn("[supabase] dbSaveQuiz failed:", err?.message || err);
+  }
 }
+
+
 
 async function dbLoadQuiz(id){ if (!supabase) return null;
   try {
